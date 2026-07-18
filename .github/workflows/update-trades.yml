@@ -1,0 +1,29 @@
+name: Update trade history
+
+on:
+  schedule:
+    - cron: "0 12 * * 2"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Rebuild from Sleeper
+        run: |
+          python ff_history.py --outdir .
+          cp trade_timeline.html index.html
+      - name: Commit any changes
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add trades.json trade_timeline.html index.html
+          git diff --staged --quiet || git commit -m "Auto-update trade history ($(date -u +%F))"
+          git push
