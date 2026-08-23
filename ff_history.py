@@ -75,7 +75,54 @@ def parallel(func, items, workers=12):
 # --------------------------------------------------------------------------
 # Build the data model from the API
 # --------------------------------------------------------------------------
+def resolve_latest_league(start_league):
+    """Follow the league chain FORWARD to the newest season.
+
+    Sleeper mints a brand-new league id every season and the league object only
+    points backward (`previous_league_id`). A pinned id therefore goes stale the
+    moment the league rolls over -- and nothing errors, the script just keeps
+    rebuilding an old season forever. Walk forward instead: ask this season's
+    members which leagues they are in next season and take the one whose
+    previous_league_id is the league we already know.
+    """
+    state = get("%s/state/nfl" % API) or {}
+    try:
+        target = int(state.get("league_season") or state.get("season"))
+    except (TypeError, ValueError):
+        print("  ! could not read current season from Sleeper; using pinned league")
+        return start_league
+
+    lid = start_league
+    lg = get("%s/league/%s" % (API, lid))
+    if not lg:
+        return start_league
+
+    while int(lg["season"]) < target:
+        nxt = int(lg["season"]) + 1
+        found = None
+        for u in (get("%s/league/%s/users" % (API, lid)) or [])[:6]:
+            uid = u.get("user_id")
+            if not uid:
+                continue
+            for cand in get("%s/user/%s/leagues/nfl/%s" % (API, uid, nxt)) or []:
+                if cand.get("previous_league_id") == lid:
+                    found = cand
+                    break
+            if found:
+                break
+        if not found:
+            print("  . no %s league linked to %s yet - staying on %s"
+                  % (nxt, lid, lg["season"]))
+            break
+        lg, lid = found, found["league_id"]
+        print("  -> rolled forward to %s league %s" % (lg["season"], lid))
+
+    return lid
+
+
 def build_model(start_league):
+    start_league = resolve_latest_league(start_league)
+
     # 1. Walk the league chain back to the first season.
     print("Walking league chain from", start_league)
     chain = []
@@ -217,6 +264,8 @@ def main():
     ap.add_argument("--from-json", dest="from_json", default=None,
                     help="skip the API and build the dashboard from this trades.json")
     ap.add_argument("--outdir", default=".", help="output directory")
+    ap.add_argument("--allow-shrink", action="store_true",
+                    help="permit writing fewer trades than the existing trades.json")
     args = ap.parse_args()
 
     os.makedirs(args.outdir, exist_ok=True)
@@ -229,6 +278,18 @@ def main():
         print("Loaded %d trades from %s" % (model.get("tradeCount", 0), args.from_json))
     else:
         model = build_model(args.league)
+        prev = None
+        if os.path.exists(json_path):
+            try:
+                with open(json_path, encoding="utf-8") as f:
+                    prev = json.load(f)
+            except (OSError, ValueError):
+                prev = None
+        if prev and not args.allow_shrink and model["tradeCount"] < prev.get("tradeCount", 0):
+            sys.exit("ABORT: rebuilt %d trades but %s already holds %d. A partial "
+                     "Sleeper fetch would overwrite good data with bad. Re-run, or "
+                     "pass --allow-shrink if the drop is genuine."
+                     % (model["tradeCount"], json_path, prev.get("tradeCount", 0)))
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(model, f, separators=(",", ":"))
         print("Wrote", json_path)
@@ -255,6 +316,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   header{padding:18px 22px 12px;border-bottom:1px solid var(--line)}
   h1{margin:0;font-size:20px;letter-spacing:.2px}
   .sub{color:var(--dim);font-size:13px;margin-top:3px}
+  .sub.stale{color:#f0a04b;font-weight:600}
   .wrap{display:flex;flex-direction:column;height:100vh}
   .controls{display:flex;flex-wrap:wrap;gap:14px;align-items:center;
     padding:11px 22px;border-bottom:1px solid var(--line);background:var(--panel)}
@@ -340,6 +402,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <header>
     <h1>The Champions League <span style="color:var(--faint);font-weight:400">· Trade History</span></h1>
     <div class="sub" id="sub"></div>
+    <div class="sub" id="freshness"></div>
   </header>
 
   <div class="controls">
@@ -481,6 +544,21 @@ function el(n,a){const e=document.createElementNS(NS,n);for(const k in(a||{}))e.
   $('sub').textContent = TRADES.length+' trades · '+managers.length+' managers · '
     + seasons[0]+'–'+seasons[seasons.length-1]+'  ·  '+nP+' players & '+nPick+' picks moved ('
     + nResolved+' traded picks resolved to the player actually drafted)';
+  // Freshness stamp: makes "the update stopped running" visually distinct
+  // from "nobody has traded lately" -- previously indistinguishable.
+  (function(){
+    const el=$('freshness'); if(!el) return;
+    if(!MODEL.generated){ el.textContent='Refresh time unknown'; return; }
+    const days=(Date.now()-MODEL.generated)/86400000;
+    const stamp=new Date(MODEL.generated).toLocaleString(undefined,
+      {year:'numeric',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+    const ago = days<1 ? Math.max(1,Math.round(days*24))+'h ago'
+                       : Math.round(days)+' day'+(Math.round(days)===1?'':'s')+' ago';
+    el.textContent='Data refreshed '+stamp+' ('+ago+')';
+    el.className='sub';
+    if(days>8){ el.className='sub stale';
+      el.textContent+=' \u2014 the weekly update has not run, check the Actions tab'; }
+  })();
   // season chips
   const sc=$('seasonChips');
   const mk=(val,txt)=>{const c=document.createElement('div');c.className='chip'+(state.season===val?' on':'');
