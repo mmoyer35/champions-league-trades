@@ -2,28 +2,67 @@ name: Update trade history
 
 on:
   schedule:
+    # Tuesdays, 12:00 UTC (8am ET). Keep in sync with the 8-day staleness
+    # warning the dashboard shows if a run gets skipped.
     - cron: "0 12 * * 2"
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
+concurrency:
+  group: update-trades
+  cancel-in-progress: false
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Record current trade count
+        id: before
+        run: |
+          echo "count=$(python -c "import json;print(json.load(open('trades.json'))['tradeCount'])")" >> "$GITHUB_OUTPUT"
+
       - name: Rebuild from Sleeper
         run: |
+          # No --allow-shrink: the script aborts rather than overwrite good
+          # data if Sleeper returns a partial response. A red run here is the
+          # signal; silent staleness is the thing we are trying to avoid.
           python ff_history.py --outdir .
           cp trade_timeline.html index.html
+
       - name: Commit any changes
+        id: commit
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add trades.json trade_timeline.html index.html
-          git diff --staged --quiet || git commit -m "Auto-update trade history ($(date -u +%F))"
-          git push
+          if git diff --staged --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Auto-update trade history ($(date -u +%F))"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          AFTER=$(python -c "import json;print(json.load(open('trades.json'))['tradeCount'])")
+          BEFORE=${{ steps.before.outputs.count }}
+          {
+            echo "### Trade history refresh"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Trades before | $BEFORE |"
+            echo "| Trades after | $AFTER |"
+            echo "| New trades | $((AFTER - BEFORE)) |"
+            echo "| Committed | ${{ steps.commit.outputs.changed }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
