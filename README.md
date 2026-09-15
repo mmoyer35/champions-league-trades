@@ -1,4 +1,4 @@
-# The Champions League — Trade History
+# The Champions League — Trade History & Record Book
 
 An interactive timeline of every trade in our Sleeper dynasty league
 (2021–present). Time runs along the x-axis; every player and pick sits on its
@@ -14,7 +14,8 @@ With GitHub Pages enabled (Settings → Pages → Build from branch → `main` /
 root), the dashboard is live at:
 
 ```
-https://mmoyer35.github.io/champions-league-trades/
+https://mmoyer35.github.io/champions-league-trades/            # trade timeline
+https://mmoyer35.github.io/champions-league-trades/records.html # record book
 ```
 
 That's the link to drop in the league chat. It works on desktop and mobile.
@@ -40,15 +41,33 @@ Three things keep a silent failure from looking like a working page:
   trades than `trades.json` already holds, the script aborts and the Action
   goes red instead of committing the loss.
 
-Each run's summary in the Actions tab shows the trade count before and after.
+Each run's summary in the Actions tab shows the trade and game counts before and
+after, so a run that changed nothing is distinguishable from a run that failed.
+
+## The record book
+
+`records.html` is the all-time analyzer, built from every matchup Sleeper has on
+record (2021 → today):
+
+- **Closest games ever**, ranked. The 2026 Week 1 result — Schaffej 114.56 over
+  rdalpiaz 114.50, a **0.06** margin — is the tightest game in league history.
+- Biggest blowouts, highest and lowest single-week scores, and the best score
+  that still lost.
+- Margin-of-victory distribution across every game played.
+- A filterable table of every game, sortable by margin, score, week or manager.
+- Career record book per manager: W–L, win %, points for and against, points per
+  game, best and worst weeks, titles.
+- An all-time head-to-head matrix, and title history.
 
 ## Files
 
 | File | What it is |
 |------|-----------|
-| `index.html` / `trade_timeline.html` | The self-contained dashboard (all data baked in — no dependencies). |
-| `ff_history.py` | Pulls the full history from Sleeper and rebuilds the dashboard. Standard library only. |
-| `trades.json` | The assembled trade data the page is built from. |
+| `index.html` / `trade_timeline.html` | The self-contained trade timeline (all data baked in — no dependencies). |
+| `records.html` | The self-contained all-time record book. |
+| `ff_history.py` | Pulls the trade history from Sleeper and rebuilds the timeline. Standard library only. |
+| `ff_analyze.py` | Pulls every matchup and rebuilds the record book. Reuses the league-chain resolution from `ff_history.py`. |
+| `trades.json` / `records.json` | The assembled data each page is built from. |
 
 ## Run it yourself
 
@@ -57,6 +76,9 @@ python ff_history.py                       # refresh everything from Sleeper
 python ff_history.py --from-json trades.json   # just rebuild the page from saved data
 python ff_history.py --league <league_id>      # point at a different league
 python ff_history.py --allow-shrink            # override the trade-count guard
+
+python ff_analyze.py                           # refresh the record book from Sleeper
+python ff_analyze.py --from-json records.json  # just rebuild the record book page
 ```
 
 ## Notes on the data
