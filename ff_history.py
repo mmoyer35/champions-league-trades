@@ -403,6 +403,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <h1>The Champions League <span style="color:var(--faint);font-weight:400">· Trade History</span></h1>
     <div class="sub" id="sub"></div>
     <div class="sub" id="freshness"></div>
+    <div class="sub"><a href="./records.html" style="color:var(--accent);text-decoration:none">Record book \u2014 closest games, career stats, head to head \u2192</a></div>
   </header>
 
   <div class="controls">
