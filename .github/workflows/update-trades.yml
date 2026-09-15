@@ -1,4 +1,4 @@
-name: Update trade history
+name: Update trade history & record book
 
 on:
   schedule:
@@ -24,10 +24,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Record current trade count
+      - name: Record current counts
         id: before
         run: |
           echo "count=$(python -c "import json;print(json.load(open('trades.json'))['tradeCount'])")" >> "$GITHUB_OUTPUT"
+          echo "games=$(python -c "import json,os;print(json.load(open('records.json'))['gameCount'] if os.path.exists('records.json') else 0)")" >> "$GITHUB_OUTPUT"
 
       - name: Rebuild from Sleeper
         run: |
@@ -37,16 +38,22 @@ jobs:
           python ff_history.py --outdir .
           cp trade_timeline.html index.html
 
+      - name: Rebuild the record book
+        run: |
+          # Same no-shrink contract as the trade history: a partial Sleeper
+          # response aborts rather than overwriting a good records.json.
+          python ff_analyze.py --outdir .
+
       - name: Commit any changes
         id: commit
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add trades.json trade_timeline.html index.html
+          git add trades.json trade_timeline.html index.html records.json records.html
           if git diff --staged --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            git commit -m "Auto-update trade history ($(date -u +%F))"
+            git commit -m "Auto-update trade history and record book ($(date -u +%F))"
             git push
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
@@ -55,14 +62,16 @@ jobs:
         if: always()
         run: |
           AFTER=$(python -c "import json;print(json.load(open('trades.json'))['tradeCount'])")
+          GAFTER=$(python -c "import json,os;print(json.load(open('records.json'))['gameCount'] if os.path.exists('records.json') else 0)")
           BEFORE=${{ steps.before.outputs.count }}
+          GBEFORE=${{ steps.before.outputs.games }}
           {
-            echo "### Trade history refresh"
+            echo "### Trade history & record book refresh"
             echo ""
-            echo "| | |"
-            echo "|---|---|"
-            echo "| Trades before | $BEFORE |"
-            echo "| Trades after | $AFTER |"
-            echo "| New trades | $((AFTER - BEFORE)) |"
-            echo "| Committed | ${{ steps.commit.outputs.changed }} |"
+            echo "| | Before | After | New |"
+            echo "|---|---|---|---|"
+            echo "| Trades | $BEFORE | $AFTER | $((AFTER - BEFORE)) |"
+            echo "| Games | $GBEFORE | $GAFTER | $((GAFTER - GBEFORE)) |"
+            echo ""
+            echo "Committed: ${{ steps.commit.outputs.changed }}"
           } >> "$GITHUB_STEP_SUMMARY"
