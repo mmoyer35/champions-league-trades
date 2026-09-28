@@ -204,6 +204,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .chip.on{background:var(--accent);border-color:var(--accent);color:#06101f;font-weight:600}
   .row{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:12px}
   .row .lbl{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.7px}
+  .toggle{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--dim);cursor:pointer}
+  .toggle input{accent-color:var(--accent)}
+  .win{color:var(--cool)} .loss{color:var(--warm)}
   input.search,select{background:var(--panel2);border:1px solid var(--line);color:var(--ink);
     border-radius:6px;padding:5px 9px;font-size:12px}
   input.search:focus,select:focus{outline:none;border-color:var(--accent)}
@@ -250,6 +253,26 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         <div style="overflow-x:auto"><svg id="hist" role="img" aria-label="Distribution of margin of victory"></svg></div>
       </figure>
       <div class="foot" id="histfoot"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Highest single-week scores</h2>
+    <div class="card">
+      <div class="row">
+        <span class="lbl">Season</span><span id="scoreChips" style="display:flex;gap:7px;flex-wrap:wrap"></span>
+        <span class="lbl" style="margin-left:8px">Manager</span>
+        <select id="scoreMgr"><option value="">all</option></select>
+        <label class="toggle" style="margin-left:8px"><input type="checkbox" id="scoreWins"> wins only</label>
+      </div>
+      <div class="scroll"><table id="scoreTbl">
+        <thead><tr>
+          <th class="no rank">#</th><th class="no num">Points</th><th class="no">Manager</th>
+          <th class="no">Season</th><th class="no num">Wk</th><th class="no">Result</th>
+          <th class="no num">Opponent</th><th class="no num">Margin</th>
+        </tr></thead><tbody></tbody>
+      </table></div>
+      <div class="foot" id="scoreFoot"></div>
     </div>
   </section>
 
@@ -403,6 +426,40 @@ function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt
     r.addEventListener('mouseleave', hideTip);
   });
 })();
+
+/* ---------- highest single-week scores ---------- */
+const SCORES = [];
+G.forEach(g => {
+  SCORES.push({p:g.wp, m:g.W, s:g.s, w:g.w, po:g.p, won:1, opp:g.lp, mar:g.m});
+  SCORES.push({p:g.lp, m:g.L, s:g.s, w:g.w, po:g.p, won:0, opp:g.wp, mar:-g.m});
+});
+SCORES.sort((a,b) => b.p - a.p);
+let sState = {season:'all', mgr:'', winsOnly:false};
+const scc = $('scoreChips');
+function mkSChip(val,txt){ const c=document.createElement('span'); c.className='chip'+(sState.season===val?' on':'');
+  c.textContent=txt; c.onclick=()=>{ sState.season=val;
+    [...scc.children].forEach(x=>x.classList.remove('on')); c.classList.add('on'); renderScores(); };
+  scc.appendChild(c); }
+mkSChip('all','All'); SEASONS.forEach(x=>mkSChip(x,x));
+MODEL.managers.forEach(m => { const o=document.createElement('option'); o.value=m; o.textContent=m; $('scoreMgr').appendChild(o); });
+$('scoreMgr').onchange = e => { sState.mgr = e.target.value; renderScores(); };
+$('scoreWins').onchange = e => { sState.winsOnly = e.target.checked; renderScores(); };
+function renderScores(){
+  const rows = SCORES.filter(x =>
+    (sState.season==='all' || x.s===sState.season) &&
+    (!sState.mgr || x.m===sState.mgr) &&
+    (!sState.winsOnly || x.won));
+  document.querySelector('#scoreTbl tbody').innerHTML = rows.slice(0,150).map((x,i) =>
+    '<tr><td class="rank">'+(i+1)+'</td><td class="num"><b>'+f2(x.p)+'</b></td><td>'+esc(x.m)+'</td>'
+    +'<td>'+x.s+'</td><td class="num">'+x.w+(x.po?'<span class="tag">PO</span>':'')+'</td>'
+    +'<td class="'+(x.won?'win':'loss')+'">'+(x.won?'won':'lost')+'</td>'
+    +'<td class="num">'+f2(x.opp)+'</td><td class="num">'+(x.mar>=0?'+':'')+f2(x.mar)+'</td></tr>').join('');
+  const n200 = rows.filter(x=>x.p>=200).length;
+  $('scoreFoot').textContent = rows.length + ' team-weeks'
+    + (rows.length>150 ? ' — showing the top 150.' : '')
+    + (n200 ? '  ·  ' + n200 + ' of them cleared 200 points.' : '');
+}
+renderScores();
 
 /* ---------- games table ---------- */
 let gState = {season:'all', mgr:'', q:'', k:'m', dir:1};
